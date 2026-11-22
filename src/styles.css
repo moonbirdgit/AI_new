@@ -321,3 +321,8 @@ textarea:focus, input:focus { outline: 1px solid var(--accent); border-color: va
 @keyframes pkglow { 0%, 100% { border-color: var(--line2); box-shadow: none; } 30% { border-color: var(--accent); box-shadow: 0 0 0 1px #4c8dff, 0 0 26px #4c8dff55; } 60% { border-color: var(--line2); box-shadow: none; } }
 .picker .pk-g button:hover { animation: none; border-color: var(--accent); box-shadow: 0 0 0 1px #4c8dff, 0 0 26px #4c8dff77; }
 .rtabs button.on svg { filter: drop-shadow(0 0 4px #ffffffaa); }
+.demo select.scn { background: var(--panel2); border: 1px solid var(--line2); border-radius: 7px; padding: 2px 6px; font-size: 11.5px; color: var(--ink); max-width: 150px; }
+.rtabs button, .demo, .demo button, .status { white-space: nowrap; }
+.hb { gap: 10px; }
+.hb .demo { flex: none; }
+@media (max-width: 1380px) { .rdesc { display: none; } .status .room { display: none; } }

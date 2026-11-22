@@ -1,4 +1,5 @@
 import type {
+  ScriptMsg,
   Cust, Draft, Ev, Evaluation, Line, Order, Part, PlanOption, PlantState, ProjItem, World,
 } from './types';
 
@@ -19,7 +20,7 @@ export const RETEST = 0.07;     // 九月重測比率 7%
 export const RESCHED_AT = [720, 1020]; // 一天兩次重排：12:00、17:00
 export const PILOT_WAIT = 30;    // 示範代按：放超過 30 分沒人處理，系統代業務、生管、課長按
 /** 今天下午會陸續傳進來的客戶訊息（測試資料） */
-export const SCRIPT: { at: number; from: string; ch: string; text: string }[] = [
+export const SCRIPT: ScriptMsg[] = [
   { at: 872, from: '甲', ch: 'LINE', text: '甲王經理：A1 再加 300 片，今天 19:30 前要' },
   { at: 905, from: '乙', ch: 'Email', text: '乙 正式追加單：B2 200 片，交期今天 19:00' },
   { at: 940, from: '丙', ch: '電話', text: '丙：C2 的電容 C14 改新料號，從下一批開始換' },
@@ -28,6 +29,48 @@ export const SCRIPT: { at: number; from: string; ch: string; text: string }[] = 
   { at: 1050, from: '乙', ch: 'LINE', text: '乙：B1 加 120 片，明天下午 3 點交' },
   { at: 1100, from: '丙', ch: 'LINE', text: '丙：C1 追加 100 片，明天 12:00 要' },
 ];
+/** 測試情境：不同的訂單組合，從輕到重 */
+export const SCENARIOS: { id: string; name: string; desc: string; msgs: ScriptMsg[] }[] = [
+  { id: 'normal', name: '平常日', desc: '下午 7 則追加和換料，交期大多寬鬆', msgs: SCRIPT },
+  { id: 'jia', name: '甲連續追加', desc: '甲在兩個半小時內追加 5 張，全部今天要', msgs: [
+    { at: 870, from: '甲', ch: 'LINE', text: '甲王經理：A1 追加 300 片，今天 18:00 要' },
+    { at: 900, from: '甲', ch: '電話', text: '甲採購：A2 追加 200 片，今天 19:00 要' },
+    { at: 940, from: '甲', ch: 'LINE', text: '甲王經理：A1 再加 250 片，今天 19:30 要' },
+    { at: 990, from: '甲', ch: 'Email', text: '甲採購：A2 追加 150 片，今天 20:00 要' },
+    { at: 1020, from: '老闆', ch: '口頭', text: '老闆交代：甲的 A1 先做 200 片，今天 20:00 要' },
+  ] },
+  { id: 'ecn', name: '換料＋共用料吃緊', desc: '丙連續換料兩次，同時甲乙追加都用到 0402 電容', msgs: [
+    { at: 880, from: '丙', ch: '電話', text: '丙：C2 的電容 C14 改新料號，從下一批開始換' },
+    { at: 900, from: '甲', ch: 'LINE', text: '甲王經理：A2 追加 400 片，今天 19:30 要' },
+    { at: 920, from: '乙', ch: 'Email', text: '乙 正式追加單：B2 300 片，交期今天 19:00' },
+    { at: 950, from: '丙', ch: 'LINE', text: '丙：C1 的電阻 R7 改新料號，從下一批開始換' },
+    { at: 980, from: '甲', ch: '電話', text: '甲採購：A1 追加 300 片，明天 10:00 要' },
+    { at: 1030, from: '乙', ch: 'LINE', text: '乙：B2 加 200 片，明天 12:00 交' },
+  ] },
+  { id: 'tight', name: '交期很緊', desc: '6 張追加，交期都在 2–3 小時內', msgs: [
+    { at: 870, from: '乙', ch: 'Email', text: '乙 正式追加單：B1 200 片，交期今天 17:00' },
+    { at: 890, from: '丙', ch: 'LINE', text: '丙：C2 追加 150 片，今天 17:30 要' },
+    { at: 910, from: '甲', ch: 'LINE', text: '甲王經理：A1 追加 200 片，今天 17:30 要' },
+    { at: 940, from: '乙', ch: '電話', text: '乙：B2 追加 250 片，今天 18:30 要' },
+    { at: 980, from: '丙', ch: 'LINE', text: '丙：C1 追加 200 片，今天 19:00 要' },
+    { at: 1020, from: '甲', ch: '電話', text: '甲採購：A2 追加 200 片，今天 19:30 要' },
+  ] },
+  { id: 'peak', name: '尖峰：全部一起來', desc: '12 則訊息：甲連續追加、交期很緊、換料、老闆插隊同時發生', msgs: [
+    { at: 865, from: '甲', ch: 'LINE', text: '甲王經理：A1 追加 300 片，今天 18:00 要' },
+    { at: 875, from: '乙', ch: 'Email', text: '乙 正式追加單：B1 200 片，交期今天 17:00' },
+    { at: 885, from: '丙', ch: '電話', text: '丙：C2 的電容 C14 改新料號，從下一批開始換' },
+    { at: 900, from: '丙', ch: 'LINE', text: '丙：C2 追加 150 片，今天 17:30 要' },
+    { at: 915, from: '甲', ch: '電話', text: '甲採購：A2 追加 200 片，今天 19:00 要' },
+    { at: 935, from: '乙', ch: '電話', text: '乙：B2 追加 250 片，今天 18:30 要' },
+    { at: 950, from: '老闆', ch: '口頭', text: '老闆交代：甲的 A1 先做 200 片，今天 19:30 要' },
+    { at: 970, from: '丙', ch: 'LINE', text: '丙：C1 追加 200 片，今天 19:00 要' },
+    { at: 990, from: '甲', ch: 'LINE', text: '甲王經理：A1 再加 250 片，今天 20:00 要' },
+    { at: 1010, from: '乙', ch: 'LINE', text: '乙：B1 加 120 片，明天下午 3 點交' },
+    { at: 1040, from: '甲', ch: 'Email', text: '甲採購：A2 追加 150 片，明天 10:00 要' },
+    { at: 1080, from: '丙', ch: 'LINE', text: '丙：C1 追加 100 片，明天 12:00 要' },
+  ] },
+];
+export const OLD_CO = 77;        // 舊做法：換線時才找飛達、夾具，九月實際平均 1.28 小時
 export const LANES: Record<string, number>[] = [
   { 甲: 1 }, { 甲: 1, 乙: 2 }, { 乙: 1 }, { 丙: 1, 乙: 2 },
 ];
@@ -64,7 +107,7 @@ export function log(w: World, role: string, stage: string, act: string, detail: 
 }
 
 /* ---------- 示範資料：14:20，四條線都在生產 ---------- */
-export function seed(): World {
+export function seed(scn = 'normal'): World {
   const O: Record<string, Order> = {};
   const o = (id: string, cust: Cust, model: string, qty: number, due: number, status: Order['status'], line: number, done = 0, extra: Partial<Order> = {}) => {
     O[id] = {
@@ -138,8 +181,10 @@ export function seed(): World {
   ];
   H.forEach(([t, role, st, act, det, ex]) => { state.clock = t; log(w, role, st, act, det, ex || {}); });
   state.clock = START;
+  const sc = SCENARIOS.find((x) => x.id === scn) || SCENARIOS[0];
+  state.scenario = sc.id; state.script = sc.msgs;
   w.inbox.push({ id: 'm0', t: 582, from: '乙', ch: 'Email', text: '乙（Email）：B1 追加 150 片，今天 13:00 要', status: 'done', orderId: '乙-追1' });
-  log(w, '系統', '回報', '開始示範', '14:20，四條線正在生產；下午會陸續有客戶追加');
+  log(w, '系統', '回報', '開始示範', `14:20，四條線正在生產；情境「${sc.name}」：${sc.desc}`);
   return w;
 }
 
@@ -322,14 +367,29 @@ export function makeOptions(w: World, orderId: string): PlanOption[] {
     const onAt = P0[i].find((x) => x.start <= at && at < x.end);
     const who = onAt ? O[onAt.id] : c0;
     if (who && who.model === o.model) return;
+    const locked = (x: Order | null | undefined) => !!x && x.type === 'rush' && x.cust === '甲' && !x.tmr;   // 不能停掉另一張甲今天要的追加
     const approval = o.cust !== '甲';
+    if (locked(who)) return;
     const op: PlanOption = { id: '', kind: 'preempt', line: i, stopAt: Math.max(S.clock, at), approval, stops: who.id, ev: blankEv, score: 0,
       label: pre ? `${i + 1} 線換做（料已依週預估備好，${hm(Math.max(S.clock, at))} 停 ${who.id}）` : `${i + 1} 線料到前才停（${hm(at)} 停 ${who.id}）` };
     op.ev = evaluate(S, O, o, op, base); opts.push(op);
+    if (locked(c0)) return;
     const op2: PlanOption = { id: '', kind: 'now', line: i, stopAt: S.clock, approval, stops: c0.id, ev: blankEv, score: 0,
       label: `${i + 1} 線立刻停 ${c0.id}` };
     op2.ev = evaluate(S, O, o, op2, base); opts.push(op2);
   });
+  // 甲爆量：1、2 線怎麼排都趕不上時，才提出「借別條線」的破例，要課長核准
+  if (o.cust === '甲' && opts.length && opts.every((x) => x.ev.vio.length)) {
+    [0, 1, 2, 3].filter((i) => !LANES[i][o.cust]).forEach((i) => {
+      const L = S.lines[i];
+      const c0 = L.cur ? O[L.cur] : null;
+      if (!c0 || c0.model === o.model || (c0.type === 'rush' && c0.cust === '甲')) return;
+      const at = Math.max(S.clock, S.clock + rk - CO);
+      const op: PlanOption = { id: '', kind: 'preempt', line: i, stopAt: at, approval: true, stops: c0.id, ev: blankEv, score: 0,
+        label: `破例：借 ${i + 1} 線（${hm(at)} 停 ${c0.id}）`, note: '1、2 線都趕不上交期，借用其他客戶的線，要課長核准。' };
+      op.ev = evaluate(S, O, o, op, base); opts.push(op);
+    });
+  }
   opts.forEach((op) => {
     const e = op.ev;
     op.end = e.end;
@@ -433,6 +493,8 @@ export function kitAction(w: World, orderId: string, a: 'start' | 'ready' | 'atl
 /* ---------- 時間推進：每分鐘照規則跑 ---------- */
 export function advance(w: World, mins: number | 'end' | 'next', auto: boolean, pilot = false): number {
   const S = w.state, O = w.orders;
+  const OLD = S.policy === 'old';
+  const COT = OLD ? OLD_CO : CO;
   const target = mins === 'end' ? END : mins === 'next' ? Math.min(END, S.clock + 90) : Math.min(END, S.clock + mins);
   let n = 0;
   const E = (role: string, stage: string, act: string, detail: string, ex: Partial<Ev> = {}) => { log(w, role, stage, act, detail, ex); n++; };
@@ -443,14 +505,19 @@ export function advance(w: World, mins: number | 'end' | 'next', auto: boolean, 
     L.cur = id; o.status = 'running'; o.line = i; if (!o.startAt) o.startAt = S.clock;
     L.lampY = L.lampB = false;
     if (prevModel && o.model === prevModel) { o.kit = { status: 'atline', atlineAt: S.clock }; L.mode = 'run'; E('產線', '生產', '同機種接著做', `${i + 1} 線接 ${id}，免換線`, { order: id, line: i }); return; }
-    if (o.kit && o.kit.status === 'atline') { L.mode = 'co'; L.coLeft = CO; S.metrics.co++; E('產線', '換線', '綠牌亮，開始換線', `${i + 1} 線 → ${id}`, { order: id, line: i }); }
+    if (OLD && !(o.kit && o.kit.status === 'atline')) {
+      // 舊做法：先拆線換線，同時才叫倉庫備料
+      if (!o.kit || o.kit.status === 'todo') o.kit = { status: 'picking', startAt: S.clock, need: KIT };
+      L.mode = 'co'; L.coLeft = COT; S.metrics.co++; E('產線', '換線', '拆線換線，才通知倉庫備料', `${i + 1} 線 → ${id}`, { order: id, line: i, warn: 1 }); return;
+    }
+    if (o.kit && o.kit.status === 'atline') { L.mode = 'co'; L.coLeft = COT; S.metrics.co++; E('產線', '換線', '綠牌亮，開始換線', `${i + 1} 線 → ${id}`, { order: id, line: i }); }
     else { L.mode = 'wait'; L.preCo = true; E('產線', '換線', '料未到，先不拆線', `${i + 1} 線等 ${id} 的料`, { order: id, line: i, warn: 1 }); }
   };
   while (S.clock < target) {
     const t = S.clock;
     if (mins === 'next' && n > 0) break;
-    if (RESCHED_AT.includes(t) && !S.resched.includes(t)) { S.resched.push(t); reschedule(w, 'auto'); n++; }
-    SCRIPT.forEach((m) => { if (m.at === t) { pushMsg(w, m.from, m.ch, m.text); n++; } });
+    if (!OLD && RESCHED_AT.includes(t) && !S.resched.includes(t)) { S.resched.push(t); reschedule(w, 'auto'); n++; }
+    (S.script || SCRIPT).forEach((m) => { if (m.at === t) { pushMsg(w, m.from, m.ch, m.text); n++; } });
     if (pilot) n += autopilot(w);
     // 下游：人工站 → 品保 → 出貨
     S.lines.forEach((_, i) => {
@@ -486,7 +553,7 @@ export function advance(w: World, mins: number | 'end' | 'next', auto: boolean, 
           E('品保', '品保', '記子批號', `${cur.id} 拆成兩段，子批 -1：${made} 片`, { order: cur.id });
         }
         L.cur = ro.id; ro.status = 'running'; ro.startAt = t; ro.line = i;
-        L.mode = 'co'; L.coLeft = CO; L.preempt = null; L.lampY = L.lampB = false; S.metrics.co++;
+        L.mode = 'co'; L.coLeft = COT; L.preempt = null; L.lampY = L.lampB = false; S.metrics.co++;
         E('產線', '換線', '開始換線', `${i + 1} 線 → ${ro.id}（${ro.model}）`, { order: ro.id, line: i });
         cur = ro;
       }
@@ -504,7 +571,7 @@ export function advance(w: World, mins: number | 'end' | 'next', auto: boolean, 
       if (L.mode === 'wait') {
         S.metrics.waitMin++;
         if (cur.kit && cur.kit.status === 'atline') {
-          if (L.preCo) { L.mode = 'co'; L.coLeft = CO; L.preCo = false; S.metrics.co++; E('產線', '換線', '綠牌亮，開始換線', `${i + 1} 線 → ${cur.id}`, { order: cur.id, line: i }); }
+          if (L.preCo) { L.mode = 'co'; L.coLeft = COT; L.preCo = false; S.metrics.co++; E('產線', '換線', '綠牌亮，開始換線', `${i + 1} 線 → ${cur.id}`, { order: cur.id, line: i }); }
           else { L.mode = 'run'; E('產線', '生產', '料到，開始生產', `${i + 1} 線做 ${cur.id}`, { order: cur.id, line: i }); }
         } else if (auto && cur.kit && cur.kit.status === 'todo') { cur.kit = { status: 'picking', startAt: t, need: KIT }; E('倉庫', '備料', '開始備料', cur.id, { order: cur.id }); }
         else if (auto && cur.kit && cur.kit.status === 'ready') { cur.kit.status = 'fetching'; cur.kit.fetchDone = t + FETCH; E('產線', '備料', '前段去推料', cur.id, { order: cur.id }); }
@@ -516,9 +583,9 @@ export function advance(w: World, mins: number | 'end' | 'next', auto: boolean, 
       const rem = (cur.qty || 0) - cur.done;
       const nx = L.queue[0] ? O[L.queue[0]] : null;
       if (nx && nx.model !== cur.model) {
-        if (rem <= YEL && !L.lampY) { L.lampY = true; E('系統', '備料', '黃燈', `${i + 1} 線剩 ${Math.ceil(rem)} 片，備 ${nx.id} 的料`, { order: nx.id, line: i }); }
+        if (!OLD && rem <= YEL && !L.lampY) { L.lampY = true; E('系統', '備料', '黃燈', `${i + 1} 線剩 ${Math.ceil(rem)} 片，備 ${nx.id} 的料`, { order: nx.id, line: i }); }
         if (L.lampY && auto && nx.kit && nx.kit.status === 'todo') { nx.kit = { status: 'picking', startAt: t, need: KIT }; reserveParts(w, nx); E('倉庫', '備料', '開始備料', `${nx.id} 的料`, { order: nx.id }); }
-        if (rem <= BLU && !L.lampB) { L.lampB = true; E('系統', '備料', '藍燈', `${i + 1} 線剩 ${Math.ceil(rem)} 片，前段去帶 ${nx.id} 的料`, { order: nx.id, line: i }); }
+        if (!OLD && rem <= BLU && !L.lampB) { L.lampB = true; E('系統', '備料', '藍燈', `${i + 1} 線剩 ${Math.ceil(rem)} 片，前段去帶 ${nx.id} 的料`, { order: nx.id, line: i }); }
         if (L.lampB && auto && nx.kit && nx.kit.status === 'ready') { nx.kit.status = 'fetching'; nx.kit.fetchDone = t + FETCH; E('產線', '備料', '前段去推料', nx.id, { order: nx.id }); }
       }
       if (rem <= 0) {

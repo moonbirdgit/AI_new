@@ -112,7 +112,7 @@ class Store {
     } finally { this.busy = false; }
   }
 
-  async reset() { await this.act((w) => { const s = seed(); s.version = w.version; Object.assign(w, s); }); }
+  async reset(scn?: string) { await this.act((w) => { const s = seed(scn || w.state?.scenario || 'normal'); s.version = w.version; Object.assign(w, s); }); }
 
   shareUrl() { const u = new URL(location.href); u.searchParams.set('room', this.room); u.hash = ''; return u.toString(); }
   newRoomUrl() { const u = new URL(location.href); u.searchParams.set('room', Math.random().toString(36).slice(2, 8)); u.hash = ''; return u.toString(); }

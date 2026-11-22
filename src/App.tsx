@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { checkAI } from './ai';
 import { Drawer } from './drawers';
-import { advance, END, hm, testMessage, uid } from './engine/engine';
+import { advance, END, hm, SCENARIOS, testMessage, uid } from './engine/engine';
 import { Lines, Orders, Side, Stages, Todo } from './panels';
 import { BossView, ChiefView, LineDesk, PlannerView, RoleBar, RolePicker, SalesView, WarehouseView, type RoleSel } from './roles';
 import { store, useWorld } from './store';
@@ -79,17 +79,12 @@ export default function App() {
           <div className="brand"><i />昇嶺排程中樞</div>
           {(role === '業務' || role === '全部') && <button className="btn sm pri" onClick={() => setDrawer('intake')}>＋ 新增變更單</button>}
           <div className="spacer" />
-          <div className="status">
-            <span title={store.mode === 'remote' ? '同一個連結的人看到同一份資料' : '資料只在這個瀏覽器'}><i className="dot" style={{ background: store.mode === 'remote' ? 'var(--ok)' : 'var(--ink3)' }} />{store.mode === 'remote' ? '共用' : '本機'}</span>
-            <span title={ai ? '智能體使用 ' + ai : '沒有 AI 金鑰，智能體用規則'}><i className="dot" style={{ background: ai ? 'var(--ok)' : 'var(--ink3)' }} />{ai ? 'AI' : '規則'}</span>
-            {store.error && <span style={{ color: 'var(--bad)' }}>{store.error}</span>}
-            <span className="room">{store.room}<button className="btn sm ghost" onClick={share}>分享</button></span>
-            <button className="btn sm ghost" onClick={() => ask('回到 14:20，清除這個房間的變更單和紀錄？', async () => { await store.reset(); toast('已重設'); })}>重設</button>
-          </div>
-        </div>
-        <RoleBar role={role} setRole={setRole}>
           <div className="demo" title="示範用：讓工廠時間自己往前，或一次跳到下一個事件">
-            示範時間 <span className="clock num">{hm(w.state.clock)}</span>
+            <select className="scn" value={w.state.scenario || 'normal'} title={SCENARIOS.find((x) => x.id === (w.state.scenario || 'normal'))?.desc}
+              onChange={(e) => { const v = e.target.value; const sc = SCENARIOS.find((x) => x.id === v)!; ask(`載入情境「${sc.name}」？${sc.desc}。這個房間會回到 14:20 重新開始。`, async () => { await store.reset(v); toast(`已載入情境：${sc.name}`); }); }}>
+              {SCENARIOS.map((x) => <option key={x.id} value={x.id}>情境：{x.name}</option>)}
+            </select>
+            <span className="clock num">{hm(w.state.clock)}</span>
             <button className={'btn sm play' + (w.play.on ? ' on' : '')} onClick={togglePlay}>{w.play.on ? '⏸ 暫停' : '▶ 播放'}</button>
             <div className="seg" title="播放速度：每秒走幾分鐘">
               {[1, 3, 10].map((v) => <button key={v} className={w.play.speed === v ? 'on' : ''} onClick={() => store.act((x) => { x.play.speed = v; })}>{v}×</button>)}
@@ -101,7 +96,15 @@ export default function App() {
             <button className="btn sm" onClick={() => store.act((x) => testMessage(x)).then(() => toast('已丟進一則測試訂單訊息'))} title="隨機產生一則客戶追加訊息，業務收件匣會出現">＋ 測試訂單</button>
             <label className="switch" title="沒人按的時候：照燈號自動備料、推料；變更單放超過 30 分沒人處理，系統代業務、生管、課長按（示範用）"><input type="checkbox" checked={w.play.auto} onChange={(e) => { const v = e.target.checked; store.act((x) => { x.play.auto = v; }); }} />自動</label>
           </div>
-        </RoleBar>
+          <div className="status">
+            <span title={store.mode === 'remote' ? '同一個連結的人看到同一份資料' : '資料只在這個瀏覽器'}><i className="dot" style={{ background: store.mode === 'remote' ? 'var(--ok)' : 'var(--ink3)' }} />{store.mode === 'remote' ? '共用' : '本機'}</span>
+            <span title={ai ? '智能體使用 ' + ai : '沒有 AI 金鑰，智能體用規則'}><i className="dot" style={{ background: ai ? 'var(--ok)' : 'var(--ink3)' }} />{ai ? 'AI' : '規則'}</span>
+            {store.error && <span style={{ color: 'var(--bad)' }}>{store.error}</span>}
+            <span className="room">{store.room}<button className="btn sm ghost" onClick={share}>分享</button></span>
+            <button className="btn sm ghost" onClick={() => ask('回到 14:20，清除這個房間的變更單和紀錄？', async () => { await store.reset(); toast('已重設'); })}>重設</button>
+          </div>
+        </div>
+        <RoleBar role={role} setRole={setRole} />
       </div>
       <main>
         {!role && <RolePicker setRole={setRole} />}

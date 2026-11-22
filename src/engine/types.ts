@@ -83,7 +83,11 @@ export interface PlantState {
   reserved: Record<string, Record<string, number>>; // 單號 → 料名 → 已預留
   resched: number[];                  // 今天已做過的重排時間
   shippedToday: number;
+  scenario?: string;                  // 目前載入的測試情境
+  script?: ScriptMsg[];               // 這個情境下午會進來的客戶訊息
+  policy?: 'old' | 'new';             // 壓力測試用：old＝舊做法（線停了才備料、換線 77 分、不重排）
 }
+export interface ScriptMsg { at: number; from: string; ch: string; text: string }
 
 export interface Ev {
   id: string;

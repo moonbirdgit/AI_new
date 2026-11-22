@@ -6,10 +6,12 @@ import {
 } from './engine/engine';
 import type { Cust as CustT, Draft, PlanOption, World } from './engine/types';
 import type { Open } from './panels';
+import { Gantt, simulate, type RoleSel } from './roles';
+import { project } from './engine/engine';
 import { store } from './store';
 import { ask, Cust, KIT_TXT, KitPill, lineState, StatusPill, toast } from './ui';
 
-export function Drawer({ w, d, open, close }: { w: World; d: string; open: Open; close: () => void }) {
+export function Drawer({ w, d, open, close, role }: { w: World; d: string; open: Open; close: () => void; role: RoleSel | null }) {
   const [kind, arg] = d.split(':');
   const titles: Record<string, string> = {
     intake: '新增變更單', plan: '試算與決定', approve: '課長核准', order: '訂單', stage: '環節', line: '產線', forecast: '甲的週預估', weekly: '週檢討', report: '日報',
@@ -20,11 +22,11 @@ export function Drawer({ w, d, open, close }: { w: World; d: string; open: Open;
       <aside className="drawer">
         <div className="dh2"><h3>{kind === 'stage' ? ({ intake: '接單', plan: '試算決策', kit: '備料', smt: 'SMT', asm: '人工站', qa: '品保', ship: '出貨' } as Record<string, string>)[arg] + ' 環節' : kind === 'line' ? `${+arg + 1} 線` : (titles[kind] || '') + (arg ? `：${arg}` : '')}</h3><button className="btn ghost" style={{ marginLeft: 'auto' }} onClick={close}>關閉 ✕</button></div>
         <div className="dbody">
-          {kind === 'intake' && <Intake w={w} close={close} open={open} />}
+          {kind === 'intake' && (role === '業務' || role === '全部' ? <Intake w={w} close={close} open={open} /> : <div className="empty">變更單由業務新增。請在上方「我是」切換成業務。</div>)}
           {kind === 'plan' && <Plan w={w} id={arg} close={close} />}
           {kind === 'approve' && <Approve w={w} id={arg} close={close} />}
           {kind === 'order' && <OrderView w={w} id={arg} />}
-          {kind === 'stage' && <StageView w={w} k={arg} open={open} />}
+          {kind === 'stage' && <StageView w={w} k={arg} open={open} role={role} />}
           {kind === 'line' && <LineView w={w} i={+arg} open={open} />}
           {kind === 'forecast' && <Forecast w={w} close={close} />}
           {kind === 'weekly' && <WeeklyView w={w} />}
@@ -135,6 +137,9 @@ function Plan({ w, id, close }: { w: World; id: string; close: () => void }) {
               </button>); })}
           </div>
         </div>
+        {pick && (() => { const p = opts.find((x) => x.id === pick); return p && p.line != null ? (
+          <div className="sec"><h4>模擬排程：選方案 {p.id} 之後（白框是這張單）</h4><Gantt w={w} P={simulate(w, id, p)} hl={id} compact />
+            <details style={{ marginTop: 6 }}><summary className="hint" style={{ cursor: 'pointer' }}>對照：現在的排程</summary><Gantt w={w} P={project(w.state, w.orders)} compact /></details></div>) : null; })()}
         <div className="note"><div className="lab">試算說明 {exp && <span className={'pill ' + (exp.ai ? 'ai' : '')}>{exp.ai ? 'AI' : '規則'}</span>}</div>{busy ? '整理中…' : exp?.text}</div>
         <div className="row"><button className="btn pri" disabled={busy || !pick} onClick={go}>確認方案 {pick}，派發</button><span className="hint">派發後：業務拿到回覆草稿、倉庫拿到料單、看板更新</span></div>
       </>}
@@ -195,13 +200,13 @@ export function OrderView({ w, id }: { w: World; id: string }) {
 }
 
 /* ---------- 環節細節 ---------- */
-function StageView({ w, k, open }: { w: World; k: string; open: Open }) {
+function StageView({ w, k, open, role }: { w: World; k: string; open: Open; role: RoleSel | null }) {
   const O = Object.values(w.orders);
   const ev = (stage: string[]) => w.events.filter((e) => stage.includes(e.stage)).slice(0, 12);
   const List = ({ list, extra }: { list: typeof O; extra?: (o: (typeof O)[0]) => React.ReactNode }) => (
     <table><tbody>{list.map((o) => <tr key={o.id} className="click" onClick={() => open('order:' + o.id)}><td><span className="row"><Cust c={o.cust} />{o.id}</span></td><td className="mut">{o.model}{o.qty ? ` × ${o.qty}` : ''}</td><td>{extra ? extra(o) : <StatusPill o={o} />}</td></tr>)}</tbody></table>);
   const Feed = ({ stage }: { stage: string[] }) => (<div className="sec"><h4>最近動作</h4>{ev(stage).map((e) => <div key={e.id} className="fi"><time className="num">{hm(e.t)}</time><div><span className="pill" style={{ marginRight: 6 }}>{e.role}</span><b>{e.act}</b>　<span className="mut">{e.detail}</span></div></div>)}</div>);
-  if (k === 'intake') return (<><div className="sec"><h4>今天的變更單（負責：業務）</h4><List list={O.filter((o) => o.type !== 'base')} /><button className="btn pri" style={{ marginTop: 8 }} onClick={() => open('intake')}>新增變更單</button></div>
+  if (k === 'intake') return (<><div className="sec"><h4>今天的變更單（負責：業務）</h4><List list={O.filter((o) => o.type !== 'base')} />{role === '業務' || role === '全部' ? <button className="btn pri" style={{ marginTop: 8 }} onClick={() => open('intake')}>新增變更單</button> : <div className="hint" style={{ marginTop: 6 }}>變更單由業務新增。</div>}</div>
     <div className="sec"><h4>甲的週預估</h4>{Object.keys(w.state.forecast).length ? Object.entries(w.state.forecast).map(([m, q]) => <div key={m}>{m}：{q} 片</div>) : <span className="mut">還沒填</span>}<button className="btn sm" style={{ marginLeft: 8 }} onClick={() => open('forecast')}>編輯</button></div><Feed stage={['接單']} /></>);
   if (k === 'plan') return (<><div className="sec"><h4>等決定（負責：生管、課長）</h4><List list={O.filter((o) => ['submitted', 'approval'].includes(o.status))} extra={(o) => <button className="btn sm pri" onClick={(e) => { e.stopPropagation(); open((o.status === 'approval' ? 'approve:' : 'plan:') + o.id); }}>{o.status === 'approval' ? '核准' : '試算'}</button>} /></div>
     <div className="sec"><h4>一天兩次重排（12:00、17:00 自動）</h4><div className="hint">只動沒鎖住的單，把同機種排在一起。今天已省下換線 {w.state.metrics.coSaved} 次。</div><button className="btn sm" style={{ marginTop: 6 }} onClick={() => store.act((x) => reschedule(x, 'manual'))}>現在重排一次</button></div><Feed stage={['試算']} /></>);
@@ -228,7 +233,7 @@ function LineView({ w, i, open }: { w: World; i: number; open: Open }) {
         {L.preempt && <div className="note" style={{ marginTop: 8 }}><div className="lab">已排定</div>{hm(L.preempt.at)} 停線，換做 {L.preempt.orderId}</div>}
       </div>
       <div className="sec"><h4>接下來</h4>{L.queue.length ? L.queue.map((id, k) => { const o = O[id]; return <div key={id} className="row click" style={{ padding: '4px 0', cursor: 'pointer' }} onClick={() => open('order:' + id)}><span className="mut" style={{ width: 40 }}>{k === 0 ? '鎖住' : `第 ${k + 1}`}</span><Cust c={o.cust} />{o.id}<span className="mut">{o.model} × {o.qty}</span><span style={{ marginLeft: 'auto' }}><KitPill k={o.kit} /></span></div>; }) : <span className="mut">沒有排單</span>}</div>
-      <div className="sec"><h4>燈號規則</h4><div className="hint">剩 {YEL} 片亮黃燈：倉庫開始備料。剩 {BLU} 片亮藍燈：前段的人去推料。料到線邊亮綠燈：才拆線換線。</div>
+      <div className="sec"><h4>燈號規則</h4><div className="hint">剩 {YEL} 片亮黃燈：倉庫開始備料。剩 {BLU} 片亮藍燈：推料人員把料送到線邊。料和換線工具都到線邊後掛上綠牌，產線看到綠牌才拆線換線。</div>
         {L.queue[0] && O[L.queue[0]] && <div className="row" style={{ marginTop: 8 }}>{(['start', 'ready', 'atline'] as const).map((a) => <button key={a} className="btn sm" onClick={() => store.act((x) => kitAction(x, L.queue[0], a))}>{{ start: '開始備料', ready: '備妥', atline: '送達線邊' }[a]}</button>)}<span className="hint">（下一張 {L.queue[0]}：{KIT_TXT[O[L.queue[0]].kit.status]?.[1]}）</span></div>}
       </div>
     </>

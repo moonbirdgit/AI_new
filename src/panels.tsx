@@ -53,7 +53,7 @@ export function Lines({ w, open }: { w: World; open: Open }) {
   const S = w.state, O = w.orders;
   return (
     <div className="pn">
-      <div className="ph"><h2>四條 SMT 線</h2><div className="r">黃燈＝剩 {YEL} 片開始備料　藍燈＝剩 {BLU} 片去帶料　綠燈＝料到線邊</div></div>
+      <div className="ph"><h2>四條 SMT 線</h2><div className="r">黃燈＝剩 {YEL} 片開始備料　藍燈＝剩 {BLU} 片把料推到線邊　綠牌＝料和工具到線邊，才能換線</div></div>
       <div className="lines">
         {S.lines.map((L, i) => {
           const c = L.cur ? O[L.cur] : null;
@@ -100,14 +100,19 @@ export function todos(w: World): Todo[] {
   if (!Object.keys(S.forecast).length) out.push({ role: '業務', text: '填甲的本週追加預估', hint: '有預估，1 線旁先備料', act: 'forecast', label: '填寫' });
   out.push({ role: '生管', text: '週檢討：AI 整理本週數據', hint: '換線參數要不要改', act: 'weekly', label: '產生' });
   out.push({ role: '課長', text: '下班前講一段日報', hint: '語音或打字', act: 'report', label: '日報' });
+  const late = O.filter((o) => !o.shipped && !o.tmr && o.due != null && o.eta != null && o.eta > o.due);
+  if (late.length) out.push({ role: '老闆', text: `${late.length} 張單可能延誤`, hint: late.map((o) => o.id).join('、'), act: 'order:' + late[0].id, label: '查看', hot: true });
+  out.push({ role: '老闆', text: '看本週週報', hint: '換線、等料、準時率和建議', act: 'weekly', label: '週報' });
+  if (O.some((o) => o.status === 'approval')) out.push({ role: '老闆', text: '有破例等課長核准', hint: '可以看理由', act: 'approve:' + O.find((o) => o.status === 'approval')!.id, label: '看' });
   return out;
 }
 export function Todo({ w, role, open }: { w: World; role: Role | '全部'; open: Open }) {
-  const list = todos(w).filter((t) => role === '全部' || role === '老闆' || t.role === role);
+  const list = todos(w).filter((t) => role === '全部' || t.role === role);
   return (
     <div className="pn">
-      <div className="ph"><h2>{role === '全部' || role === '老闆' ? '大家的待辦' : `${role}的待辦`}</h2><div className="r">{list.filter((t) => t.hot).length} 件要先處理</div></div>
+      <div className="ph"><h2>{role === '全部' ? '大家的待辦' : `${role}的待辦`}</h2><div className="r">{list.filter((t) => t.hot).length} 件要先處理</div></div>
       <div className="todo">
+        {!list.length && <div className="empty">目前沒有要你處理的事。</div>}
         {list.map((t, k) => (
           <div key={k} className={'td' + (t.hot ? ' hot' : '')}>
             <span className="who">{t.role}</span>

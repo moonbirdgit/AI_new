@@ -55,3 +55,9 @@ export async function aiReport(text: string, stats: string) {
   if (!v || !v.summary) return { summary: text.slice(0, 120), issues: [] as string[], tomorrow: '', ai: false };
   return { summary: String(v.summary), issues: Array.isArray(v.issues) ? v.issues.map(String) : [], tomorrow: String(v.tomorrow || ''), ai: true };
 }
+
+export async function aiWeekly(stats: string, rules: string[], reports: string) {
+  const v = await call<{ summary?: string; findings?: string[]; suggest?: string[] }>('weekly', { stats, rules: rules.join('；'), reports });
+  if (!v || !v.summary) return { summary: stats, findings: [] as string[], suggest: rules, ai: false };
+  return { summary: String(v.summary), findings: Array.isArray(v.findings) ? v.findings.map(String) : [], suggest: Array.isArray(v.suggest) ? v.suggest.map(String) : rules, ai: true };
+}

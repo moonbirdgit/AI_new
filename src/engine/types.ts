@@ -46,6 +46,12 @@ export interface Order {
   stops?: string;
   split?: number;
   note?: string;
+  asm?: number;       // 人工站做完的片數
+  qa?: number;        // 品保通過的片數
+  retest?: number;    // 重測片數
+  shipped?: boolean;
+  shipAt?: number;
+  prestaged?: boolean;
 }
 
 export interface Preempt { at: number; orderId: string }
@@ -62,7 +68,9 @@ export interface Line {
   preCo?: boolean;
 }
 
-export interface Metrics { co: number; coMin: number; waitMin: number; idleMin: number; out: number }
+export interface Metrics { co: number; coMin: number; waitMin: number; idleMin: number; out: number; coSaved: number }
+
+export interface Part { name: string; stock: number; use: Record<string, number> }
 
 export interface PlantState {
   clock: number;
@@ -70,6 +78,11 @@ export interface PlantState {
   metrics: Metrics;
   ecn: Record<string, string>;
   seq: number;
+  forecast: Record<string, number>;   // 甲週預估：機種 → 片數
+  parts: Part[];                      // 共用料庫存
+  reserved: Record<string, Record<string, number>>; // 單號 → 料名 → 已預留
+  resched: number[];                  // 今天已做過的重排時間
+  shippedToday: number;
 }
 
 export interface Ev {
@@ -96,12 +109,23 @@ export interface Report {
   raw: string;
 }
 
+export interface Weekly {
+  id: string;
+  t: number;
+  real: number;
+  summary: string;
+  findings: string[];
+  suggest: string[];
+  ai: boolean;
+}
+
 export interface World {
   version: number;
   state: PlantState;
   orders: Record<string, Order>;
   events: Ev[];
   reports: Report[];
+  weekly: Weekly[];
 }
 
 export interface Evaluation {

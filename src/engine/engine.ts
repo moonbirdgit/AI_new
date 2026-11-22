@@ -1,5 +1,5 @@
 import type {
-  Cust, Draft, Ev, Evaluation, Line, Order, PlanOption, PlantState, ProjItem, World,
+  Cust, Draft, Ev, Evaluation, Line, Order, Part, PlanOption, PlantState, ProjItem, World,
 } from './types';
 
 /* ---------- 常數（出自個案文件與九月紀錄） ---------- */
@@ -13,6 +13,10 @@ export const BLU = 50;          // 剩 50 片亮藍燈
 export const START = 860;       // 示範從 14:20 開始
 export const END = 1200;        // 20:00 收工
 export const PRICE = 1200;      // 每片單價（示意）
+export const ASM_RATE = 3;      // 每條線的人工站每分鐘可做 3 片（插件、測試、組裝、包裝）
+export const QA_RATE = 3;       // 品保每條線每分鐘可檢 3 片
+export const RETEST = 0.07;     // 九月重測比率 7%
+export const RESCHED_AT = [720, 1020]; // 一天兩次重排：12:00、17:00
 export const LANES: Record<string, number>[] = [
   { 甲: 1 }, { 甲: 1, 乙: 2 }, { 乙: 1 }, { 丙: 1, 乙: 2 },
 ];
@@ -69,17 +73,35 @@ export function seed(): World {
   o('丙-04', '丙', 'C1', 450, 2640, 'queued', 0);
   o('甲-05', '甲', 'A1', 900, 2640, 'queued', 1);
   o('乙-05', '乙', 'B1', 600, 2640, 'queued', 2, 0, { kit: { status: 'atline' } });
+  o('乙-06', '乙', 'B2', 300, 2640, 'queued', 2);
+  o('乙-07', '乙', 'B1', 300, 2640, 'queued', 2);
   o('丙-05', '丙', 'C2', 300, 2640, 'queued', 3, 0, { kit: { status: 'atline' } });
+  o('丙-06', '丙', 'C1', 300, 2640, 'queued', 3);
+  o('丙-07', '丙', 'C2', 200, 2640, 'queued', 3);
+  // 下游進度：已完成的單都已出貨；生產中的單人工站、品保落後一點
+  Object.values(O).forEach((x) => {
+    if (x.status === 'done') { x.asm = x.qty || 0; x.qa = x.qty || 0; x.shipped = true; x.shipAt = x.doneAt; }
+    else { x.asm = Math.max(0, x.done - 40); x.qa = Math.max(0, x.done - 80); }
+  });
   const mk = (i: number, cur: string, mode: Line['mode'], coLeft: number, queue: string[]): Line =>
     ({ i, cur, mode, coLeft, queue, lampY: false, lampB: false, preempt: null });
   const state: PlantState = {
     clock: START,
-    lines: [mk(0, '乙-04', 'run', 0, ['丙-04']), mk(1, '乙-02', 'run', 0, ['甲-05']), mk(2, '乙-03', 'run', 0, ['乙-05']), mk(3, '丙-02', 'co', 20, ['丙-05'])],
-    metrics: { co: 3, coMin: 130, waitMin: 0, idleMin: 0, out: 0 },
+    lines: [mk(0, '乙-04', 'run', 0, ['丙-04']), mk(1, '乙-02', 'run', 0, ['甲-05']), mk(2, '乙-03', 'run', 0, ['乙-05', '乙-06', '乙-07']), mk(3, '丙-02', 'co', 20, ['丙-05', '丙-06', '丙-07'])],
+    metrics: { co: 3, coMin: 130, waitMin: 0, idleMin: 0, out: 0, coSaved: 0 },
     ecn: {},
     seq: 1,
+    forecast: {},
+    parts: [
+      { name: '0402 電容', stock: 2400, use: { A1: 2, A2: 2, B2: 1 } },
+      { name: '主控 IC-77', stock: 1500, use: { B1: 1, C1: 1 } },
+      { name: '連接器 J5', stock: 900, use: { A2: 1, C2: 1 } },
+    ],
+    reserved: {},
+    resched: [720],
+    shippedToday: Object.values(O).filter((x) => x.shipped).reduce((a, x) => a + (x.qty || 0), 0),
   };
-  const w: World = { version: 1, state, orders: O, events: [], reports: [] };
+  const w: World = { version: 1, state, orders: O, events: [], reports: [], weekly: [] };
   log(w, '系統', '回報', '開始示範', '14:20，四條線正在生產');
   return w;
 }
@@ -187,7 +209,9 @@ export function applyOpt(S: PlantState, O: Record<string, Order>, orderId: strin
     q.splice(pos, 0, o.id);
     o.kit = { status: 'todo' };
   } else if (opt.kind === 'preempt' || opt.kind === 'now') {
-    o.kit = { status: 'picking', startAt: S.clock, need: RUSHKIT - FETCH };
+    const pre = (S.forecast[o.model] || 0) > 0;
+    o.prestaged = pre;
+    o.kit = pre ? { status: 'picking', startAt: S.clock, need: 5 } : { status: 'picking', startAt: S.clock, need: RUSHKIT - FETCH };
     S.lines[opt.line].preempt = { at: opt.stopAt ?? S.clock, orderId: o.id };
   }
 }
@@ -251,7 +275,8 @@ export function makeOptions(w: World, orderId: string): PlanOption[] {
     if (!bestAfter || (op.ev.end ?? 1e9) < (bestAfter.ev.end ?? 1e9)) bestAfter = op;
   });
   if (bestAfter) opts.push(bestAfter);
-  const rk = o.type === 'rush' ? RUSHKIT : KIT;
+  const pre = (S.forecast[o.model] || 0) > 0;
+  const rk = pre ? FETCH + 5 : o.type === 'rush' ? RUSHKIT : KIT;
   lanes.filter((i) => LANES[i][o.cust] === 1).forEach((i) => {
     const L = S.lines[i];
     const c0 = L.cur ? O[L.cur] : null;
@@ -261,8 +286,8 @@ export function makeOptions(w: World, orderId: string): PlanOption[] {
     const who = onAt ? O[onAt.id] : c0;
     if (who && who.model === o.model) return;
     const approval = o.cust !== '甲';
-    const op: PlanOption = { id: '', kind: 'preempt', line: i, stopAt: at, approval, stops: who.id, ev: blankEv, score: 0,
-      label: `${i + 1} 線料到前才停（${hm(at)} 停 ${who.id}）` };
+    const op: PlanOption = { id: '', kind: 'preempt', line: i, stopAt: Math.max(S.clock, at), approval, stops: who.id, ev: blankEv, score: 0,
+      label: pre ? `${i + 1} 線換做（料已依週預估備好，${hm(Math.max(S.clock, at))} 停 ${who.id}）` : `${i + 1} 線料到前才停（${hm(at)} 停 ${who.id}）` };
     op.ev = evaluate(S, O, o, op, base); opts.push(op);
     const op2: PlanOption = { id: '', kind: 'now', line: i, stopAt: S.clock, approval, stops: c0.id, ev: blankEv, score: 0,
       label: `${i + 1} 線立刻停 ${c0.id}` };
@@ -360,15 +385,15 @@ export function markReplied(w: World, orderId: string) {
 export function kitAction(w: World, orderId: string, a: 'start' | 'ready' | 'atline') {
   const o = w.orders[orderId], S = w.state;
   if (!o) return;
-  if (a === 'start') { o.kit = { status: 'picking', startAt: S.clock, need: o.type === 'rush' ? RUSHKIT - FETCH : KIT }; log(w, '倉庫', '備料', '開始備料', `${orderId}｜${o.model}`, { order: orderId }); }
+  if (a === 'start') { o.kit = { status: 'picking', startAt: S.clock, need: o.type === 'rush' ? RUSHKIT - FETCH : KIT }; reserveParts(w, o); log(w, '倉庫', '備料', '開始備料', `${orderId}｜${o.model}`, { order: orderId }); }
   if (a === 'ready') { o.kit.status = 'ready'; o.kit.readyAt = S.clock; log(w, '倉庫', '備料', '備妥', orderId, { order: orderId }); }
   if (a === 'atline') { o.kit.status = 'atline'; o.kit.atlineAt = S.clock; log(w, '倉庫', '備料', '送達線邊', `${orderId} → ${(o.line ?? 0) + 1} 線，亮綠牌`, { order: orderId }); }
 }
 
 /* ---------- 時間推進：每分鐘照規則跑 ---------- */
-export function advance(w: World, mins: number | 'end', auto: boolean): number {
+export function advance(w: World, mins: number | 'end' | 'next', auto: boolean): number {
   const S = w.state, O = w.orders;
-  const target = mins === 'end' ? END : Math.min(END, S.clock + mins);
+  const target = mins === 'end' ? END : mins === 'next' ? Math.min(END, S.clock + 90) : Math.min(END, S.clock + mins);
   let n = 0;
   const E = (role: string, stage: string, act: string, detail: string, ex: Partial<Ev> = {}) => { log(w, role, stage, act, detail, ex); n++; };
   const startNext = (L: Line, i: number, prevModel: string | null) => {
@@ -383,6 +408,22 @@ export function advance(w: World, mins: number | 'end', auto: boolean): number {
   };
   while (S.clock < target) {
     const t = S.clock;
+    if (mins === 'next' && n > 0) break;
+    if (RESCHED_AT.includes(t) && !S.resched.includes(t)) { S.resched.push(t); reschedule(w, 'auto'); n++; }
+    // 下游：人工站 → 品保 → 出貨
+    S.lines.forEach((_, i) => {
+      let cap = ASM_RATE, qcap = QA_RATE;
+      Object.values(O).forEach((o) => {
+        if (o.line !== i || o.shipped) return;
+        const a0 = o.asm || 0, q0 = o.qa || 0;
+        const da = Math.min(cap, o.done - a0); if (da > 0) { o.asm = a0 + da; cap -= da; }
+        const dq = Math.min(qcap, (o.asm || 0) - q0); if (dq > 0) { o.qa = q0 + dq * (1 - RETEST); o.retest = (o.retest || 0) + dq * RETEST; qcap -= dq; }
+        if (o.status === 'done' && (o.qa || 0) + (o.retest || 0) >= (o.qty || 0) - 0.5) {
+          o.qa = o.qty || 0; o.shipped = true; o.shipAt = t; S.shippedToday += o.qty || 0;
+          E('出貨', '出貨', '出貨', `${o.id} ${o.qty} 片出貨${o.due != null && !o.tmr ? (t <= o.due ? '（準時）' : '（晚 ' + (t - o.due) + ' 分）') : ''}`, { order: o.id });
+        }
+      });
+    });
     Object.keys(O).forEach((id) => {
       const o = O[id], k = o.kit;
       if (!k || o.status === 'done') return;
@@ -434,7 +475,7 @@ export function advance(w: World, mins: number | 'end', auto: boolean): number {
       const nx = L.queue[0] ? O[L.queue[0]] : null;
       if (nx && nx.model !== cur.model) {
         if (rem <= YEL && !L.lampY) { L.lampY = true; E('系統', '備料', '黃燈', `${i + 1} 線剩 ${Math.ceil(rem)} 片，備 ${nx.id} 的料`, { order: nx.id, line: i }); }
-        if (L.lampY && auto && nx.kit && nx.kit.status === 'todo') { nx.kit = { status: 'picking', startAt: t, need: KIT }; E('倉庫', '備料', '開始備料', `${nx.id} 的料`, { order: nx.id }); }
+        if (L.lampY && auto && nx.kit && nx.kit.status === 'todo') { nx.kit = { status: 'picking', startAt: t, need: KIT }; reserveParts(w, nx); E('倉庫', '備料', '開始備料', `${nx.id} 的料`, { order: nx.id }); }
         if (rem <= BLU && !L.lampB) { L.lampB = true; E('系統', '備料', '藍燈', `${i + 1} 線剩 ${Math.ceil(rem)} 片，前段去帶 ${nx.id} 的料`, { order: nx.id, line: i }); }
         if (L.lampB && auto && nx.kit && nx.kit.status === 'ready') { nx.kit.status = 'fetching'; nx.kit.fetchDone = t + FETCH; E('產線', '備料', '前段去推料', nx.id, { order: nx.id }); }
       }
@@ -452,6 +493,78 @@ export function advance(w: World, mins: number | 'end', auto: boolean): number {
   return n;
 }
 
+/* ---------- 甲週預估 ---------- */
+export function setForecast(w: World, model: string, qty: number) {
+  if (qty > 0) w.state.forecast[model] = qty; else delete w.state.forecast[model];
+  log(w, '業務', '接單', '更新甲週預估', qty > 0 ? `${model} 本週預估追加 ${qty} 片 → 1 線旁先備 ${model} 的料` : `${model} 取消預估`);
+}
+
+/* ---------- 共用料 ---------- */
+function partNeed(p: Part, o: Order) { return (p.use[o.model] || 0) * Math.max(0, (o.qty || 0) - o.done); }
+export function reserveParts(w: World, o: Order) {
+  const r: Record<string, number> = {};
+  w.state.parts.forEach((p) => { const n = partNeed(p, o); if (n > 0) { r[p.name] = n; } });
+  w.state.reserved[o.id] = r;
+}
+export interface Conflict { part: string; stock: number; need: number; orders: string[] }
+export function conflicts(w: World): Conflict[] {
+  const S = w.state, O = w.orders, out: Conflict[] = [];
+  // 會用到料的單：正在做、各線下一張、已排程的插單
+  const ids = new Set<string>();
+  S.lines.forEach((L) => { if (L.cur) ids.add(L.cur); if (L.queue[0]) ids.add(L.queue[0]); });
+  Object.values(O).forEach((o) => { if (o.status === 'planned') ids.add(o.id); });
+  S.parts.forEach((p) => {
+    let need = 0; const who: string[] = [];
+    ids.forEach((id) => { const o = O[id]; if (!o || o.status === 'done') return; const n = partNeed(p, o); if (n > 0) { need += n; who.push(id); } });
+    if (need > p.stock && who.length > 1) out.push({ part: p.name, stock: p.stock, need, orders: who });
+  });
+  return out;
+}
+
+/* ---------- 一天兩次重排：只動沒鎖住的單，同機種排在一起 ---------- */
+export function reschedule(w: World, by: string): number {
+  const S = w.state, O = w.orders;
+  const before = project(S, O).reduce((n, it) => n + it.filter((x) => x.co).length, 0);
+  S.lines.forEach((L) => {
+    if (L.queue.length <= 2) return;
+    const locked = L.queue[0];
+    const rest = L.queue.slice(1);
+    const order: string[] = [];
+    let prev = O[locked]?.model;
+    while (rest.length) {
+      let k = rest.findIndex((id) => O[id]?.model === prev);
+      if (k < 0) k = 0;
+      const id = rest.splice(k, 1)[0];
+      order.push(id); prev = O[id]?.model;
+    }
+    L.queue = [locked, ...order];
+  });
+  const after = project(S, O).reduce((n, it) => n + it.filter((x) => x.co).length, 0);
+  const saved = Math.max(0, before - after);
+  S.metrics.coSaved += saved;
+  log(w, '生管', '試算', by === 'auto' ? '定時重排' : '手動重排', saved ? `同機種排在一起，換線少 ${saved} 次（鎖住的下一張不動）` : '目前排法已是最少換線，不用動');
+  return saved;
+}
+
+/* ---------- 週檢討用的統計 ---------- */
+export function weekStats(w: World) {
+  const m = w.state.metrics;
+  const avgCo = m.co ? Math.round(m.coMin / m.co) : 0;
+  const est = Object.values(w.orders).filter((o) => o.status === 'done' && o.eta);
+  const err = est.length ? Math.round(est.reduce((a, o) => a + Math.abs((o.doneAt || 0) - (o.eta || 0)), 0) / est.length) : null;
+  const exc = w.events.filter((e) => e.act === '核准破例').length;
+  const done = Object.values(w.orders).filter((o) => o.status === 'done' && !o.tmr && o.due != null);
+  const ontime = done.length ? Math.round(done.filter((o) => (o.doneAt || 0) <= o.due!).length / done.length * 100) : null;
+  const text = `換線 ${m.co} 次、平均每次 ${avgCo} 分（試算參數 ${CO} 分）；等料 ${m.waitMin} 分；重排省下換線 ${m.coSaved} 次；` +
+    `準時率 ${ontime ?? '—'}%；試算平均誤差 ${err ?? '—'} 分；破例 ${exc} 次；變更單 ${Object.values(w.orders).filter((o) => o.type !== 'base').length} 張`;
+  const suggest: string[] = [];
+  if (avgCo > CO + 5) suggest.push(`實際換線平均 ${avgCo} 分，比試算用的 ${CO} 分多，建議把參數調成 ${avgCo} 分`);
+  if (m.waitMin > 30) suggest.push(`等料 ${m.waitMin} 分，建議黃燈門檻從 ${YEL} 片提早到 ${YEL + 50} 片`);
+  if (exc > 1) suggest.push(`破例 ${exc} 次，週會檢討是否有人繞過規則`);
+  if (!suggest.length) suggest.push('參數維持不變');
+  return { text, suggest, avgCo };
+}
+
 /* ---------- 指標與異常 ---------- */
 export interface Alert { lv: 'bad' | 'warn'; role: string; text: string }
 export function alerts(w: World): Alert[] {
@@ -463,6 +576,7 @@ export function alerts(w: World): Alert[] {
     if (o.status !== 'done' && !o.tmr && o.due != null && o.eta && o.eta > o.due) a.push({ lv: 'bad', role: '生管', text: `${o.id} 預計 ${hm(o.eta)} 完成，超過交期` });
     if (o.status === 'done' && o.eta && o.doneAt && Math.abs(o.doneAt - o.eta) > 60) a.push({ lv: 'warn', role: '工程', text: `${o.id} 實際與試算差 ${Math.abs(Math.round(o.doneAt - o.eta))} 分` });
   });
+  conflicts(w).forEach((c) => a.push({ lv: 'warn', role: '倉庫', text: `共用料不足：${c.part} 需要 ${c.need.toLocaleString()}、庫存 ${c.stock.toLocaleString()}（${c.orders.join('、')}）` }));
   S.lines.forEach((L, i) => {
     const c = L.cur ? O[L.cur] : null;
     if (L.mode === 'wait') a.push({ lv: 'bad', role: '倉庫', text: `${i + 1} 線等料${c ? '（' + c.id + '）' : ''}` });

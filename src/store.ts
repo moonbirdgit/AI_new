@@ -12,6 +12,13 @@ import type { World } from './engine/types';
 export type Mode = 'loading' | 'remote' | 'local';
 type Listener = () => void;
 
+/** 舊版資料缺新欄位時，換成新的示範資料（保留版本號） */
+function normalize(w: World | null): World | null {
+  if (!w) return w;
+  if (!w.state || !Array.isArray(w.state.parts) || !w.weekly || !w.state.forecast) { const s = seed(); s.version = w.version || 1; return s; }
+  return w;
+}
+
 function getRoom(): string {
   const u = new URL(location.href);
   let r = (u.searchParams.get('room') || '').toLowerCase();
@@ -37,7 +44,7 @@ class Store {
 
   private localKey() { return 'sl-world-' + this.room; }
   private loadLocal(): World {
-    try { const s = localStorage.getItem(this.localKey()); if (s) return JSON.parse(s); } catch { /* 無法讀取就用新的 */ }
+    try { const s = localStorage.getItem(this.localKey()); if (s) return normalize(JSON.parse(s)) || seed(); } catch { /* 無法讀取就用新的 */ }
     return seed();
   }
   private saveLocal(w: World) { try { localStorage.setItem(this.localKey(), JSON.stringify(w)); } catch { /* 忽略 */ } }
@@ -48,7 +55,7 @@ class Store {
       if (r.status === 503 || r.status === 404 || !r.ok) throw new Error('no_store');
       const j = await r.json();
       this.mode = 'remote';
-      if (j.world) this.world = j.world;
+      if (j.world) this.world = normalize(j.world);
       else { const w = seed(); await this.push(w, -1); this.world = w; }
       this.timer = window.setInterval(() => this.poll(), 2000);
     } catch {
@@ -64,7 +71,7 @@ class Store {
       const r = await fetch(`/api/world?room=${this.room}&v=${this.world.version}`);
       if (!r.ok) return;
       const j = await r.json();
-      if (!j.same && j.world && j.world.version !== this.world.version) { this.world = j.world; this.emit(); }
+      if (!j.same && j.world && j.world.version !== this.world.version) { this.world = normalize(j.world); this.emit(); }
       this.error = '';
     } catch { this.error = '連線中斷，稍後重試'; this.emit(); }
   }
@@ -95,7 +102,7 @@ class Store {
         try {
           const r = await this.push(w, base);
           if (r.ok) return out;
-          this.world = r.world || prev; this.emit();
+          this.world = normalize(r.world || null) || prev; this.emit();
         } catch {
           this.world = prev; this.error = '儲存失敗，請再按一次'; this.emit();
           return;

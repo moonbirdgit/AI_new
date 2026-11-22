@@ -26,8 +26,9 @@ export function Stages({ w, open }: { w: World; open: Open }) {
   const qaWip = Math.round(O.reduce((a, o) => a + Math.max(0, (o.asm || 0) - (o.qa || 0) - (o.retest || 0)), 0));
   const retest = Math.round(O.reduce((a, o) => a + (o.retest || 0), 0));
   const noReply = ch.filter((o) => o.reply && !o.replied).length;
+  const newMsg = (w.inbox || []).filter((m) => m.status === 'new').length;
   const items = [
-    { k: 'intake', n: '接單', who: '業務', big: ch.length, unit: '張變更', ln: noReply ? `${noReply} 張待回覆客戶` : '全部已回覆', cls: noReply ? 'busy' : '' },
+    { k: 'intake', n: '接單', who: '業務', big: newMsg, unit: '則新訊息', ln: `${ch.length} 張變更單${noReply ? `・${noReply} 張待回覆` : ''}`, cls: newMsg || noReply ? 'busy' : '' },
     { k: 'plan', n: '試算決策', who: '生管', big: sub + appr, unit: '待決定', ln: appr ? `${appr} 張等課長核准` : `今天決定 ${decided} 次`, cls: sub + appr ? 'busy' : '' },
     { k: 'kit', n: '備料', who: '倉庫', big: kits.length, unit: '張料單', ln: cf ? `⚠ 共用料不足 ${cf} 項` : `備料中 ${picking}・運送 ${moving}`, cls: cf ? 'alert' : '' },
     { k: 'smt', n: 'SMT', who: '產線', big: smtToday.toLocaleString(), unit: '片', ln: wait.length ? `⚠ ${wait.map((L) => L.i + 1).join('、')} 線等料` : co.length ? `${co.map((L) => L.i + 1).join('、')} 線換線中` : '四條線生產中', cls: wait.length ? 'alert' : co.length ? 'busy' : '' },
@@ -82,7 +83,8 @@ export function Lines({ w, open }: { w: World; open: Open }) {
 interface Todo { role: Role; text: string; hint?: string; act?: string; label?: string; run?: () => void; hot?: boolean }
 export function todos(w: World): Todo[] {
   const S = w.state, O = Object.values(w.orders), out: Todo[] = [];
-  out.push({ role: '業務', text: '貼上新的客戶訊息', hint: 'AI 整理成變更單', act: 'intake', label: '新增', hot: !O.some((o) => o.type !== 'base') });
+  (w.inbox || []).filter((m) => m.status === 'new').forEach((m) => out.push({ role: '業務', text: `新訊息：${m.from}（${m.ch}）${hm(m.t)}`, hint: m.text, act: 'intake:' + m.id, label: '整理', hot: true }));
+  out.push({ role: '業務', text: '貼上其他客戶訊息', hint: 'AI 整理成變更單', act: 'intake', label: '新增' });
   O.filter((o) => o.status === 'submitted').forEach((o) => out.push({ role: '生管', text: `${o.id} 等你試算`, hint: `${o.model}${o.qty ? ' × ' + o.qty : ''}・交期 ${hm(o.due)}`, act: 'plan:' + o.id, label: '試算', hot: true }));
   O.filter((o) => o.status === 'approval').forEach((o) => out.push({ role: '課長', text: `${o.id} 要打斷 ${o.stops}`, hint: o.optLabel, act: 'approve:' + o.id, label: '核准', hot: true }));
   O.filter((o) => o.type !== 'base' && !o.replied && o.reply).forEach((o) => out.push({ role: '業務', text: `回覆客戶 ${o.id}`, hint: `預計 ${hm(o.eta)} 完成`, act: 'order:' + o.id, label: '回覆', hot: true }));

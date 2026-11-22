@@ -15,7 +15,8 @@ type Listener = () => void;
 /** 舊版資料缺新欄位時，換成新的示範資料（保留版本號） */
 function normalize(w: World | null): World | null {
   if (!w) return w;
-  if (!w.state || !Array.isArray(w.state.parts) || !w.weekly || !w.state.forecast) { const s = seed(); s.version = w.version || 1; return s; }
+  if (!w.state || !Array.isArray(w.state.parts) || !w.weekly || !w.state.forecast || !Array.isArray(w.inbox)) { const s = seed(); s.version = w.version || 1; return s; }
+  if (!w.play) w.play = { on: false, speed: 1, auto: true, by: '', beat: 0 };
   return w;
 }
 

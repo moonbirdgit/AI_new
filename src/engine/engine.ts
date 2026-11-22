@@ -17,6 +17,17 @@ export const ASM_RATE = 3;      // 每條線的人工站每分鐘可做 3 片（
 export const QA_RATE = 3;       // 品保每條線每分鐘可檢 3 片
 export const RETEST = 0.07;     // 九月重測比率 7%
 export const RESCHED_AT = [720, 1020]; // 一天兩次重排：12:00、17:00
+export const PILOT_WAIT = 30;    // 示範代按：放超過 30 分沒人處理，系統代業務、生管、課長按
+/** 今天下午會陸續傳進來的客戶訊息（測試資料） */
+export const SCRIPT: { at: number; from: string; ch: string; text: string }[] = [
+  { at: 872, from: '甲', ch: 'LINE', text: '甲王經理：A1 再加 300 片，今天 19:30 前要' },
+  { at: 905, from: '乙', ch: 'Email', text: '乙 正式追加單：B2 200 片，交期今天 19:00' },
+  { at: 940, from: '丙', ch: '電話', text: '丙：C2 的電容 C14 改新料號，從下一批開始換' },
+  { at: 975, from: '老闆', ch: '口頭', text: '老闆交代：甲的 A2 先做 200 片，明天早上 10 點要' },
+  { at: 1010, from: '甲', ch: '電話', text: '甲採購來電：A1 再追加 150 片，晚上 8 點要' },
+  { at: 1050, from: '乙', ch: 'LINE', text: '乙：B1 加 120 片，明天下午 3 點交' },
+  { at: 1100, from: '丙', ch: 'LINE', text: '丙：C1 追加 100 片，明天 12:00 要' },
+];
 export const LANES: Record<string, number>[] = [
   { 甲: 1 }, { 甲: 1, 乙: 2 }, { 乙: 1 }, { 丙: 1, 乙: 2 },
 ];
@@ -78,6 +89,11 @@ export function seed(): World {
   o('丙-05', '丙', 'C2', 300, 2640, 'queued', 3, 0, { kit: { status: 'atline' } });
   o('丙-06', '丙', 'C1', 300, 2640, 'queued', 3);
   o('丙-07', '丙', 'C2', 200, 2640, 'queued', 3);
+  o('甲-06', '甲', 'A2', 300, 2640, 'queued', 0);
+  o('乙-08', '乙', 'B2', 300, 2640, 'queued', 1);
+  o('乙-追1', '乙', 'B1', 150, 780, 'done', 2, 150, { type: 'rush', startAt: 715, doneAt: 750, raw: '乙（Email）：B1 追加 150 片，今天 13:00 要', submittedT: 590, plannedT: 598, eta: 750,
+    optLabel: '方案 A：3 線同機種接著做', explain: '建議 A：3 線正在做 B1，同機種接著做不用換線，預計 12:30 完成，趕得上 13:00；其他今天的單不受影響。',
+    reply: '您好，B1 150 片已排入生產，預計 12:30 完成，可於 13:00 前出貨。', replied: true });
   // 下游進度：已完成的單都已出貨；生產中的單人工站、品保落後一點
   Object.values(O).forEach((x) => {
     if (x.status === 'done') { x.asm = x.qty || 0; x.qa = x.qty || 0; x.shipped = true; x.shipAt = x.doneAt; }
@@ -87,10 +103,10 @@ export function seed(): World {
     ({ i, cur, mode, coLeft, queue, lampY: false, lampB: false, preempt: null });
   const state: PlantState = {
     clock: START,
-    lines: [mk(0, '乙-04', 'run', 0, ['丙-04']), mk(1, '乙-02', 'run', 0, ['甲-05']), mk(2, '乙-03', 'run', 0, ['乙-05', '乙-06', '乙-07']), mk(3, '丙-02', 'co', 20, ['丙-05', '丙-06', '丙-07'])],
+    lines: [mk(0, '乙-04', 'run', 0, ['丙-04', '甲-06']), mk(1, '乙-02', 'run', 0, ['甲-05', '乙-08']), mk(2, '乙-03', 'run', 0, ['乙-05', '乙-06', '乙-07']), mk(3, '丙-02', 'co', 20, ['丙-05', '丙-06', '丙-07'])],
     metrics: { co: 3, coMin: 130, waitMin: 0, idleMin: 0, out: 0, coSaved: 0 },
     ecn: {},
-    seq: 1,
+    seq: 2,
     forecast: {},
     parts: [
       { name: '0402 電容', stock: 2400, use: { A1: 2, A2: 2, B2: 1 } },
@@ -101,8 +117,29 @@ export function seed(): World {
     resched: [720],
     shippedToday: Object.values(O).filter((x) => x.shipped).reduce((a, x) => a + (x.qty || 0), 0),
   };
-  const w: World = { version: 1, state, orders: O, events: [], reports: [], weekly: [] };
-  log(w, '系統', '回報', '開始示範', '14:20，四條線正在生產');
+  const w: World = { version: 1, state, orders: O, events: [], reports: [], weekly: [], inbox: [], play: { on: false, speed: 1, auto: true, by: '', beat: 0 } };
+  // 早上已經發生的事（測試資料），讓紀錄、決策、出貨不是空的
+  const H: [number, string, string, string, string, Partial<Ev>?][] = [
+    [480, '系統', '回報', '開工', '1 線甲-01、2 線甲-02、3 線乙-01、4 線丙-01'],
+    [582, '客戶', '接單', '新訊息', '乙（Email）：B1 追加 150 片，今天 13:00 要'],
+    [590, '業務', '接單', '送出變更單', '乙-追1｜乙 B1 150 片｜交期 13:00', { order: '乙-追1' }],
+    [598, '生管', '試算', '確認派發', '乙-追1｜方案 A：3 線同機種接著做｜預計 12:30 完成', { order: '乙-追1' }],
+    [605, '業務', '派發', '已回覆客戶', '乙-追1｜您好，B1 150 片已排入生產…', { order: '乙-追1' }],
+    [630, '系統', '備料', '黃燈', '4 線剩 200 片，備 丙-03 的料', { line: 3 }],
+    [640, '倉庫', '備料', '開始備料', '丙-03 的料'],
+    [705, '產線', '備料', '料到線邊，亮綠牌', '丙-03 → 4 線', { line: 3 }],
+    [710, '產線', '生產', '完成', '丙-01 450 片', { line: 3 }],
+    [720, '生管', '試算', '定時重排', '同機種排在一起，換線少 1 次（鎖住的下一張不動）'],
+    [750, '產線', '生產', '完成', '乙-追1 150 片（試算 12:30，差 0 分）', { order: '乙-追1', line: 2 }],
+    [770, '產線', '生產', '完成', '甲-01、甲-02、乙-01 都做完'],
+    [790, '出貨', '出貨', '出貨', '乙-追1 150 片出貨（準時）', { order: '乙-追1' }],
+    [830, '產線', '生產', '完成', '丙-03 300 片', { line: 3 }],
+    [840, '產線', '換線', '綠牌亮，開始換線', '4 線 → 丙-02', { line: 3 }],
+  ];
+  H.forEach(([t, role, st, act, det, ex]) => { state.clock = t; log(w, role, st, act, det, ex || {}); });
+  state.clock = START;
+  w.inbox.push({ id: 'm0', t: 582, from: '乙', ch: 'Email', text: '乙（Email）：B1 追加 150 片，今天 13:00 要', status: 'done', orderId: '乙-追1' });
+  log(w, '系統', '回報', '開始示範', '14:20，四條線正在生產；下午會陸續有客戶追加');
   return w;
 }
 
@@ -296,7 +333,10 @@ export function makeOptions(w: World, orderId: string): PlanOption[] {
   opts.forEach((op) => {
     const e = op.ev;
     op.end = e.end;
-    op.score = (e.vio.length ? 1e5 : 0) + e.newLate.length * 500 + (e.late ? 300 : 0) + (e.end || 0) + e.coAdd * 20 + (op.approval ? 40 : 0) + e.wait * 3;
+    // 趕得上交期就不必搶最早完成：優先少延誤、少換線、少停別人的線；趕不上才比誰最早做完
+    const lateBy = e.late && e.end != null && o.due != null ? e.end - o.due : 0;
+    op.score = (e.vio.length ? 1e5 : 0) + e.newLate.length * 500 + (e.late ? 300 + lateBy : 0) + e.coAdd * 40 + (op.approval ? 40 : 0)
+      + e.wait * 3 + (op.kind === 'preempt' || op.kind === 'now' ? 30 : 0) + (e.end || 0) * 0.1;
   });
   return mark(opts);
 }
@@ -391,7 +431,7 @@ export function kitAction(w: World, orderId: string, a: 'start' | 'ready' | 'atl
 }
 
 /* ---------- 時間推進：每分鐘照規則跑 ---------- */
-export function advance(w: World, mins: number | 'end' | 'next', auto: boolean): number {
+export function advance(w: World, mins: number | 'end' | 'next', auto: boolean, pilot = false): number {
   const S = w.state, O = w.orders;
   const target = mins === 'end' ? END : mins === 'next' ? Math.min(END, S.clock + 90) : Math.min(END, S.clock + mins);
   let n = 0;
@@ -410,6 +450,8 @@ export function advance(w: World, mins: number | 'end' | 'next', auto: boolean):
     const t = S.clock;
     if (mins === 'next' && n > 0) break;
     if (RESCHED_AT.includes(t) && !S.resched.includes(t)) { S.resched.push(t); reschedule(w, 'auto'); n++; }
+    SCRIPT.forEach((m) => { if (m.at === t) { pushMsg(w, m.from, m.ch, m.text); n++; } });
+    if (pilot) n += autopilot(w);
     // 下游：人工站 → 品保 → 出貨
     S.lines.forEach((_, i) => {
       let cap = ASM_RATE, qcap = QA_RATE;
@@ -647,4 +689,70 @@ export function ruleExplain(o: Order, opts: PlanOption[], p: PlanOption): { text
 
 export function optBrief(opts: PlanOption[]): string {
   return opts.map((p) => `${p.id}：${p.label}；完成 ${hm(p.end)}；新增延誤 ${p.ev.newLate.join('、') || '無'}；增加換線 ${p.ev.coAdd}；違規 ${p.ev.vio.join('、') || '無'}${p.approval ? '；需課長核准' : ''}${p.ev.wait ? '；換好線等料 ' + p.ev.wait + ' 分' : ''}${p.note ? '；' + p.note : ''}`).join('\n');
+}
+
+/* ---------- 客戶訊息（收件匣） ---------- */
+export function pushMsg(w: World, from: string, ch: string, text: string, test = false) {
+  if (!w.inbox) w.inbox = [];
+  w.inbox.unshift({ id: uid('m'), t: w.state.clock, from, ch, text, status: 'new', test });
+  log(w, '客戶', '接單', '新訊息', `${from}（${ch}）：${text}`);
+}
+export function msgToOrder(w: World, msgId: string, orderId: string) {
+  const m = w.inbox.find((x) => x.id === msgId);
+  if (m) { m.status = 'done'; m.orderId = orderId; const o = w.orders[orderId]; if (o) o.msgT = m.t; }
+}
+export function skipMsg(w: World, msgId: string) {
+  const m = w.inbox.find((x) => x.id === msgId);
+  if (m) { m.status = 'skip'; log(w, '業務', '接單', '不用處理', `${m.from}：${m.text.slice(0, 24)}`); }
+}
+
+/** 隨機丟一則測試訂單訊息 */
+export function testMessage(w: World) {
+  const S = w.state;
+  const pick = <T,>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)];
+  const who = pick(['甲', '甲', '乙', '乙', '丙', '老闆'] as const);
+  const real: Cust = who === '老闆' ? pick(['甲', '乙'] as const) : who;
+  const model = pick(MODELS.filter((m) => CUST_OF[m[0]] === real));
+  const qty = pick([100, 150, 200, 250, 300, 400]);
+  const ecn = real === '丙' && Math.random() < 0.35;
+  const cand = Math.ceil((S.clock + 150 + Math.floor(Math.random() * 4) * 30) / 30) * 30;
+  const due = cand <= 1200 && Math.random() < 0.6 ? cand : 1440 + pick([600, 720, 900]);
+  const tt = `${Math.floor((due % 1440) / 60)}:${String(due % 60).padStart(2, '0')}`;
+  const when = due >= 1440 ? `明天 ${tt}` : `今天 ${tt}`;
+  const ch = pick(['LINE', '電話', 'Email']);
+  const text = ecn ? `丙：${model} 的電阻 R${pick([7, 12, 21])} 改新料號，從下一批開始換`
+    : who === '老闆' ? `老闆交代：${real}的 ${model} 先做 ${qty} 片，${when} 要`
+      : `${real}${pick(['採購', '王經理', '窗口'])}：${model} 追加 ${qty} 片，${when} 要`;
+  pushMsg(w, who, ch, text, true);
+}
+
+/** 示範代按：放太久沒人處理，系統照規則代按（業務送單、生管選建議方案、課長核准、業務回覆） */
+function autopilot(w: World): number {
+  const S = w.state, t = S.clock;
+  let n = 0;
+  const note = (who: string, what: string, id?: string) => { log(w, '系統', '派發', '示範代按', `${who}放了 ${PILOT_WAIT} 分沒人處理，系統代按：${what}`, id ? { order: id } : {}); n++; };
+  (w.inbox || []).forEach((m) => {
+    if (m.status !== 'new' || t - m.t < PILOT_WAIT) return;
+    const d = ruleExtract(m.text);
+    if (d.missing.length || !d.cust || !d.model) { m.status = 'skip'; note('業務', `${m.from} 的訊息缺${d.ask.replace('請補：', '')}，先標成要人工確認`); return; }
+    const id = submitOrder(w, { cust: d.cust, model: d.model, qty: d.qty, due: d.due, type: d.type }, m.text, false);
+    msgToOrder(w, m.id, id);
+    note('業務', `把 ${m.from} 的訊息整理成 ${id} 送給生管`, id);
+  });
+  Object.values(w.orders).forEach((o) => {
+    if (o.status === 'submitted' && t - (o.submittedT ?? t) >= PILOT_WAIT) {
+      const opts = makeOptions(w, o.id);
+      const p = opts.find((x) => !x.ev.vio.length) || opts[0];
+      const ex = ruleExplain(o, opts, p);
+      dispatch(w, o.id, p, { text: ex.text, reply: ex.reply, ai: false });
+      note('生管', `${o.id} 選建議的方案 ${p.id}`, o.id);
+    } else if (o.status === 'approval' && t - (o.submittedT ?? t) >= PILOT_WAIT * 2) {
+      approve(w, o.id, true);
+      note('課長', `核准 ${o.id} 的破例`, o.id);
+    } else if (o.type !== 'base' && o.reply && !o.replied && o.plannedT != null && t - o.plannedT >= PILOT_WAIT) {
+      markReplied(w, o.id);
+      note('業務', `回覆客戶 ${o.id}`, o.id);
+    }
+  });
+  return n;
 }

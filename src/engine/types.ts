@@ -119,6 +119,11 @@ export interface Weekly {
   ai: boolean;
 }
 
+/** 客戶傳進來、還沒變成變更單的訊息 */
+export interface Msg { id: string; t: number; from: string; ch: string; text: string; status: 'new' | 'done' | 'skip'; orderId?: string; test?: boolean }
+/** 示範時間自動往前（同一個房間共用） */
+export interface Play { on: boolean; speed: number; auto: boolean; by: string; beat: number }
+
 export interface World {
   version: number;
   state: PlantState;
@@ -126,6 +131,8 @@ export interface World {
   events: Ev[];
   reports: Report[];
   weekly: Weekly[];
+  inbox: Msg[];
+  play: Play;
 }
 
 export interface Evaluation {

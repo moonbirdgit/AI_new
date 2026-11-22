@@ -7,7 +7,7 @@ import {
 import type { Cust as CustT, Draft, PlanOption, World } from './engine/types';
 import type { Open } from './panels';
 import { Gantt, simulate, type RoleSel } from './roles';
-import { project } from './engine/engine';
+import { msgToOrder, project, skipMsg } from './engine/engine';
 import { store } from './store';
 import { ask, Cust, KIT_TXT, KitPill, lineState, StatusPill, toast } from './ui';
 
@@ -20,9 +20,9 @@ export function Drawer({ w, d, open, close, role }: { w: World; d: string; open:
     <>
       <div className="scrim" onClick={close} />
       <aside className="drawer">
-        <div className="dh2"><h3>{kind === 'stage' ? ({ intake: '接單', plan: '試算決策', kit: '備料', smt: 'SMT', asm: '人工站', qa: '品保', ship: '出貨' } as Record<string, string>)[arg] + ' 環節' : kind === 'line' ? `${+arg + 1} 線` : (titles[kind] || '') + (arg ? `：${arg}` : '')}</h3><button className="btn ghost" style={{ marginLeft: 'auto' }} onClick={close}>關閉 ✕</button></div>
+        <div className="dh2"><h3>{kind === 'stage' ? ({ intake: '接單', plan: '試算決策', kit: '備料', smt: 'SMT', asm: '人工站', qa: '品保', ship: '出貨' } as Record<string, string>)[arg] + ' 環節' : kind === 'line' ? `${+arg + 1} 線` : (titles[kind] || '') + (kind === 'intake' ? (arg ? `：${w.inbox.find((m) => m.id === arg)?.from || ''} 的訊息` : '') : arg ? `：${arg}` : '')}</h3><button className="btn ghost" style={{ marginLeft: 'auto' }} onClick={close}>關閉 ✕</button></div>
         <div className="dbody">
-          {kind === 'intake' && (role === '業務' || role === '全部' ? <Intake w={w} close={close} open={open} /> : <div className="empty">變更單由業務新增。請在上方「我是」切換成業務。</div>)}
+          {kind === 'intake' && (role === '業務' || role === '全部' ? <Intake w={w} close={close} open={open} msgId={arg} /> : <div className="empty">變更單由業務新增。請在上方「我是」切換成業務。</div>)}
           {kind === 'plan' && <Plan w={w} id={arg} close={close} />}
           {kind === 'approve' && <Approve w={w} id={arg} close={close} />}
           {kind === 'order' && <OrderView w={w} id={arg} />}
@@ -44,8 +44,9 @@ const EX: [string, string][] = [
   ['丙・換零件', '丙：C2 的電容 C14 改新料號，現在這批就要換'],
   ['老闆交代', '老闆說甲的 A2 先做 200 片，明天早上 10 點要'],
 ];
-function Intake({ w, close, open }: { w: World; close: () => void; open: Open }) {
-  const [msg, setMsg] = useState('');
+function Intake({ w, close, open, msgId }: { w: World; close: () => void; open: Open; msgId?: string }) {
+  const src = msgId ? w.inbox.find((m) => m.id === msgId) : undefined;
+  const [msg, setMsg] = useState(src?.text || '');
   const [busy, setBusy] = useState(false);
   const [d, setD] = useState<(Draft & { ai: boolean; raw: string; dueText: string }) | null>(null);
   async function run() {
@@ -65,16 +66,17 @@ function Intake({ w, close, open }: { w: World; close: () => void; open: Open })
     if (d.type === 'rush') { if (!d.qty) miss.push('數量'); if (due == null) miss.push('交期'); }
     if (miss.length) { toast('還缺：' + miss.join('、')); return; }
     if (CUST_OF[d.model![0]] !== d.cust) { toast(`${d.model} 是${CUST_OF[d.model![0]]}的機種`); return; }
-    const id = await store.act((x) => submitOrder(x, { cust: d.cust as CustT, model: d.model!, qty: d.qty, due, type: d.type }, d.raw, d.ai));
+    const id = await store.act((x) => { const nid = submitOrder(x, { cust: d.cust as CustT, model: d.model!, qty: d.qty, due, type: d.type }, d.raw, d.ai); if (msgId) msgToOrder(x, msgId, nid); return nid; });
     if (id) { toast(`${id} 已送給生管`); close(); open('order:' + id); }
   }
   const miss = (k: string) => (d && d.missing.includes(k) ? 'miss' : '');
   return (
     <>
-      <div className="sec"><h4>1　貼上客戶訊息（LINE、電話、老闆交代都貼這裡）</h4>
-        <div className="chips" style={{ marginBottom: 8 }}>{EX.map(([k, v]) => <button key={k} className="chip" onClick={() => { setMsg(v); setD(null); }}>{k}</button>)}</div>
+      {src && src.status !== 'new' && <div className="note">這則訊息已處理{src.orderId ? `，變更單是 ${src.orderId}` : '（標成不用處理）'}。</div>}
+      <div className="sec"><h4>1　{src ? `${src.from}（${src.ch}）${hm(src.t)} 傳來的訊息` : '貼上客戶訊息（LINE、電話、老闆交代都貼這裡）'}</h4>
+        {!src && <div className="chips" style={{ marginBottom: 8 }}>{EX.map(([k, v]) => <button key={k} className="chip" onClick={() => { setMsg(v); setD(null); }}>{k}</button>)}</div>}
         <textarea value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="例：甲王經理來電：A1 再加 400，今天要" />
-        <div className="row" style={{ marginTop: 8 }}><button className="btn pri" onClick={run} disabled={busy}>{busy ? '整理中…' : 'AI 整理成變更單'}</button><span className="hint">AI 失敗時改用規則整理</span></div>
+        <div className="row" style={{ marginTop: 8 }}><button className="btn pri" onClick={run} disabled={busy}>{busy ? '整理中…' : 'AI 整理成變更單'}</button>{src && src.status === 'new' && <button className="btn" onClick={() => store.act((x) => skipMsg(x, src.id)).then(close)}>不用處理</button>}<span className="hint">AI 失敗時改用規則整理</span></div>
       </div>
       {d && <div className="sec"><h4>2　確認欄位 <span className={'pill ' + (d.ai ? 'ai' : '')}>{d.ai ? 'AI 整理' : '規則整理'}</span></h4>
         <div className="fields">
@@ -206,7 +208,8 @@ function StageView({ w, k, open, role }: { w: World; k: string; open: Open; role
   const List = ({ list, extra }: { list: typeof O; extra?: (o: (typeof O)[0]) => React.ReactNode }) => (
     <table><tbody>{list.map((o) => <tr key={o.id} className="click" onClick={() => open('order:' + o.id)}><td><span className="row"><Cust c={o.cust} />{o.id}</span></td><td className="mut">{o.model}{o.qty ? ` × ${o.qty}` : ''}</td><td>{extra ? extra(o) : <StatusPill o={o} />}</td></tr>)}</tbody></table>);
   const Feed = ({ stage }: { stage: string[] }) => (<div className="sec"><h4>最近動作</h4>{ev(stage).map((e) => <div key={e.id} className="fi"><time className="num">{hm(e.t)}</time><div><span className="pill" style={{ marginRight: 6 }}>{e.role}</span><b>{e.act}</b>　<span className="mut">{e.detail}</span></div></div>)}</div>);
-  if (k === 'intake') return (<><div className="sec"><h4>今天的變更單（負責：業務）</h4><List list={O.filter((o) => o.type !== 'base')} />{role === '業務' || role === '全部' ? <button className="btn pri" style={{ marginTop: 8 }} onClick={() => open('intake')}>新增變更單</button> : <div className="hint" style={{ marginTop: 6 }}>變更單由業務新增。</div>}</div>
+  if (k === 'intake') return (<><div className="sec"><h4>客戶訊息（還沒處理 {w.inbox.filter((m) => m.status === 'new').length} 則）</h4>{w.inbox.slice(0, 8).map((m) => <div key={m.id} className="row" style={{ padding: '4px 0', borderBottom: '1px solid var(--line)', fontSize: 12 }}><span className="mut num">{hm(m.t)}</span><b>{m.from}</b><span className="mut">{m.ch}</span><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.text}</span>{m.status === 'new' ? <span className="pill warn">待處理</span> : m.orderId ? <span className="pill ok">→ {m.orderId}</span> : <span className="pill">不用處理</span>}</div>)}</div>
+    <div className="sec"><h4>今天的變更單（負責：業務）</h4><List list={O.filter((o) => o.type !== 'base')} />{role === '業務' || role === '全部' ? <button className="btn pri" style={{ marginTop: 8 }} onClick={() => open('intake')}>新增變更單</button> : <div className="hint" style={{ marginTop: 6 }}>變更單由業務新增。</div>}</div>
     <div className="sec"><h4>甲的週預估</h4>{Object.keys(w.state.forecast).length ? Object.entries(w.state.forecast).map(([m, q]) => <div key={m}>{m}：{q} 片</div>) : <span className="mut">還沒填</span>}<button className="btn sm" style={{ marginLeft: 8 }} onClick={() => open('forecast')}>編輯</button></div><Feed stage={['接單']} /></>);
   if (k === 'plan') return (<><div className="sec"><h4>等決定（負責：生管、課長）</h4><List list={O.filter((o) => ['submitted', 'approval'].includes(o.status))} extra={(o) => <button className="btn sm pri" onClick={(e) => { e.stopPropagation(); open((o.status === 'approval' ? 'approve:' : 'plan:') + o.id); }}>{o.status === 'approval' ? '核准' : '試算'}</button>} /></div>
     <div className="sec"><h4>一天兩次重排（12:00、17:00 自動）</h4><div className="hint">只動沒鎖住的單，把同機種排在一起。今天已省下換線 {w.state.metrics.coSaved} 次。</div><button className="btn sm" style={{ marginTop: 6 }} onClick={() => store.act((x) => reschedule(x, 'manual'))}>現在重排一次</button></div><Feed stage={['試算']} /></>);

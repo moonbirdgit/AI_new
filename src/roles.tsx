@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  alerts, applyOpt, clone, conflicts, END, endsOf, hm, KIT, kitAction, LANE_NAME, metrics, project, RATE, reschedule, RESCHED_AT, YEL, BLU,
+  skipMsg, alerts, applyOpt, clone, conflicts, END, endsOf, hm, KIT, kitAction, LANE_NAME, metrics, project, RATE, reschedule, RESCHED_AT, YEL, BLU,
 } from './engine/engine';
 import type { Order, PlanOption, ProjItem, World } from './engine/types';
 import type { Open, Role } from './panels';
@@ -31,15 +31,17 @@ export const ROLE_META: { r: RoleSel; d: string }[] = [
 export function RoleIcon({ r, size = 16 }: { r: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={IC[r]} /></svg>;
 }
-export function RoleBar({ role, setRole }: { role: RoleSel | null; setRole: (r: RoleSel) => void }) {
+export function RoleBar({ role, setRole, children }: { role: RoleSel | null; setRole: (r: RoleSel) => void; children?: React.ReactNode }) {
   const cur = ROLE_META.find((x) => x.r === role);
   return (
     <div className="rolebar"><div className="rbin">
       <span className="rlab">我是</span>
-      <div className="rtabs">{ROLE_META.map((x) => (
-        <button key={x.r} className={role === x.r ? 'on' : ''} onClick={() => setRole(x.r)} title={x.d}><RoleIcon r={x.r} /><span>{x.r === '全部' ? '看全部' : x.r}</span></button>
+      <div className={'rtabs' + (role ? '' : ' pulse')}>{ROLE_META.map((x, i) => (
+        <button key={x.r} className={role === x.r ? 'on' : ''} style={{ animationDelay: `${i * 0.22}s` }} onClick={() => setRole(x.r)} title={x.d}><RoleIcon r={x.r} /><span>{x.r === '全部' ? '看全部' : x.r}</span></button>
       ))}</div>
-      <span className="rdesc">{cur ? cur.d : '先選你的角色，主畫面會先顯示你要做的事'}</span>
+      <span className={'rdesc' + (role ? '' : ' hintc')}>{cur ? cur.d : '← 先選你的角色'}</span>
+      <div className="spacer" />
+      {children}
     </div></div>
   );
 }
@@ -47,8 +49,8 @@ export function RolePicker({ setRole }: { setRole: (r: RoleSel) => void }) {
   return (
     <div className="pn picker">
       <div className="pk-h"><b>你是誰？</b><span>選好角色，主畫面會先顯示你要做的事；每個環節的進度大家都看得到。之後可以在上方隨時切換。</span></div>
-      <div className="pk-g">{ROLE_META.map((x) => (
-        <button key={x.r} onClick={() => setRole(x.r)}><span className="pk-ic"><RoleIcon r={x.r} size={22} /></span><b>{x.r === '全部' ? '看全部' : x.r}</b><small>{x.d}</small></button>
+      <div className="pk-g">{ROLE_META.map((x, i) => (
+        <button key={x.r} style={{ animationDelay: `${i * 0.22}s` }} onClick={() => setRole(x.r)}><span className="pk-ic"><RoleIcon r={x.r} size={22} /></span><b>{x.r === '全部' ? '看全部' : x.r}</b><small>{x.d}</small></button>
       ))}</div>
     </div>
   );
@@ -195,7 +197,9 @@ export function SalesView({ w, open }: { w: World; open: Open }) {
   const my = Object.values(O).filter((o) => o.type !== 'base').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return (
     <div className="pn">
-      <div className="ph"><h2>我的變更單</h2><div className="r"><button className="btn sm" onClick={() => open('forecast')}>甲的週預估</button><button className="btn sm pri" onClick={() => open('intake')}>＋ 新增變更單</button></div></div>
+      <div className="ph"><h2>客戶訊息</h2><div className="r">LINE、電話、Email、老闆交代都收在這裡</div></div>
+      <Inbox w={w} open={open} />
+      <div className="ph" style={{ marginTop: 14 }}><h2>我的變更單</h2><div className="r"><button className="btn sm" onClick={() => open('forecast')}>甲的週預估</button><button className="btn sm pri" onClick={() => open('intake')}>＋ 新增變更單</button></div></div>
       {!my.length ? <div className="empty">還沒有變更單。客戶用 LINE、電話追加時，按「新增變更單」把訊息貼進來，AI 會整理成單。</div> : (
         <table>
           <thead><tr><th>單號</th><th>機種・數量</th><th>目前在哪</th><th>交期</th><th>預計完成</th><th>趕得上嗎</th><th>回覆客戶</th></tr></thead>
@@ -214,6 +218,31 @@ export function SalesView({ w, open }: { w: World; open: Open }) {
               </tr>);
           })}</tbody>
         </table>)}
+    </div>
+  );
+}
+
+function Inbox({ w, open }: { w: World; open: Open }) {
+  const nw = (w.inbox || []).filter((m) => m.status === 'new');
+  const old = (w.inbox || []).filter((m) => m.status !== 'new').slice(0, 3);
+  return (
+    <div className="inbox">
+      {!nw.length && <div className="empty">目前沒有新的客戶訊息。按右上「＋ 測試訂單」可以丟一則進來，或等客戶傳訊（下午會陸續進來）。</div>}
+      {nw.map((m) => (
+        <div key={m.id} className="msg new">
+          <span className="mt num">{hm(m.t)}</span><span className={'mf ' + (m.from === '老闆' ? 'boss' : '')}>{m.from}</span><span className="mc">{m.ch}</span>
+          <span className="mx">{m.text}</span>
+          <button className="btn sm pri" onClick={() => open('intake:' + m.id)}>整理成變更單</button>
+          <button className="btn sm ghost" onClick={() => store.act((x) => skipMsg(x, m.id))}>不用處理</button>
+        </div>
+      ))}
+      {old.map((m) => (
+        <div key={m.id} className="msg">
+          <span className="mt num">{hm(m.t)}</span><span className="mf">{m.from}</span><span className="mc">{m.ch}</span>
+          <span className="mx mut">{m.text}</span>
+          {m.orderId ? <button className="btn sm ghost" onClick={() => open('order:' + m.orderId)}>→ {m.orderId}</button> : <span className="pill">不用處理</span>}
+        </div>
+      ))}
     </div>
   );
 }

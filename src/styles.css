@@ -293,3 +293,31 @@ textarea:focus, input:focus { outline: 1px solid var(--accent); border-color: va
 .qrow { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 .kpis.big { grid-template-columns: repeat(3, 1fr); }
 .kpis.big .v small { font-size: 12px; color: var(--ink3); }
+
+/* ===== 客戶訊息 ===== */
+.inbox { display: flex; flex-direction: column; gap: 6px; }
+.msg { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: #0f151d; border: 1px solid var(--line); font-size: 12.5px; }
+.msg.new { background: #1a1608; border-color: #5a4a1d; animation: msgin .5s ease-out; }
+@keyframes msgin { from { transform: translateY(-4px); opacity: 0; } to { transform: none; opacity: 1; } }
+.msg .mt { color: var(--ink3); font-size: 11.5px; width: 38px; flex: none; }
+.msg .mf { flex: none; font-weight: 700; min-width: 26px; }
+.msg .mf.boss { color: var(--warn); }
+.msg .mc { flex: none; font-size: 10.5px; color: var(--ink3); border: 1px solid var(--line2); border-radius: 999px; padding: 0 6px; }
+.msg .mx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbin .demo { margin-left: 8px; }
+.btn.play { min-width: 66px; }
+.btn.play.on { background: var(--ok-bg); border-color: #2a6b3a; color: var(--ok); }
+.btn.play:not(.on) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.demo .seg button.on { background: var(--accent); color: #fff; }
+
+/* ===== 還沒選角色時：角色亮起來 ===== */
+.rtabs.pulse { border-color: #3a6fd0; animation: rglow 1.8s ease-in-out infinite; }
+@keyframes rglow { 0%, 100% { box-shadow: 0 0 0 0 #4c8dff00; } 50% { box-shadow: 0 0 0 3px #4c8dff40, 0 0 22px #4c8dff66; } }
+.rtabs.pulse button { animation: rwave 1.54s ease-in-out infinite; }
+@keyframes rwave { 0%, 100% { background: transparent; color: var(--ink2); } 30% { background: #1e3e74; color: #fff; box-shadow: 0 0 14px #4c8dff77; } 60% { background: transparent; color: var(--ink2); } }
+.rdesc.hintc { color: #8fb8ff; font-weight: 600; animation: rblink 1.8s ease-in-out infinite; }
+@keyframes rblink { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+.picker .pk-g button { animation: pkglow 1.54s ease-in-out infinite; }
+@keyframes pkglow { 0%, 100% { border-color: var(--line2); box-shadow: none; } 30% { border-color: var(--accent); box-shadow: 0 0 0 1px #4c8dff, 0 0 26px #4c8dff55; } 60% { border-color: var(--line2); box-shadow: none; } }
+.picker .pk-g button:hover { animation: none; border-color: var(--accent); box-shadow: 0 0 0 1px #4c8dff, 0 0 26px #4c8dff77; }
+.rtabs button.on svg { filter: drop-shadow(0 0 4px #ffffffaa); }
